@@ -176,7 +176,7 @@
     <h2>Options</h2>
     <div class="options-grid">
       <div class="opt">
-        <label>Colors: <span class="val" id="v-colors">12</span></label>
+        <label>Colours: <span class="val" id="v-colors">12</span></label>
         <input type="range" id="opt-colors" min="4" max="30" value="12">
       </div>
       <div class="opt">
@@ -489,26 +489,26 @@ function buildPDF(colors) {
   const ML = 50, MR = 50, MT = 60; // margins
 
   // Escape PDF string content (parentheses and backslash)
-  function e(s) { return String(s).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)'); }
+  function escapePdf(s) { return String(s).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)'); }
 
   // Build page content stream
-  const L = [];   // content stream lines
+  const contentLines = [];   // lines of the PDF content stream
 
-  L.push(`BT /F2 16 Tf ${ML} ${H-MT} Td (Paint by Numbers - Color Legend) Tj ET`);
-  L.push(`BT /F1 10 Tf ${ML} ${H-MT-18} Td (${e(colors.length + ' colors')}) Tj ET`);
+  contentLines.push(`BT /F2 16 Tf ${ML} ${H-MT} Td (Paint by Numbers - Colour Legend) Tj ET`);
+  contentLines.push(`BT /F1 10 Tf ${ML} ${H-MT-18} Td (${escapePdf(colors.length + ' colours')}) Tj ET`);
 
   // Header row
   const hY  = H - MT - 40;
   const C1  = ML, C2 = ML+25, C3 = C2+45, C4 = C3+68, C5 = C4+68;
-  L.push(`BT /F2 10 Tf ${C1} ${hY} Td (No.) Tj ET`);
-  L.push(`BT /F2 10 Tf ${C2} ${hY} Td (Swatch) Tj ET`);
-  L.push(`BT /F2 10 Tf ${C3} ${hY} Td (Hex) Tj ET`);
-  L.push(`BT /F2 10 Tf ${C4} ${hY} Td (R) Tj ET`);
-  L.push(`BT /F2 10 Tf ${C4+16} ${hY} Td (G) Tj ET`);
-  L.push(`BT /F2 10 Tf ${C4+32} ${hY} Td (B) Tj ET`);
+  contentLines.push(`BT /F2 10 Tf ${C1} ${hY} Td (No.) Tj ET`);
+  contentLines.push(`BT /F2 10 Tf ${C2} ${hY} Td (Swatch) Tj ET`);
+  contentLines.push(`BT /F2 10 Tf ${C3} ${hY} Td (Hex) Tj ET`);
+  contentLines.push(`BT /F2 10 Tf ${C4} ${hY} Td (R) Tj ET`);
+  contentLines.push(`BT /F2 10 Tf ${C4+16} ${hY} Td (G) Tj ET`);
+  contentLines.push(`BT /F2 10 Tf ${C4+32} ${hY} Td (B) Tj ET`);
 
   // Divider
-  L.push(`0.5 w ${ML} ${hY-4} m ${W-MR} ${hY-4} l S`);
+  contentLines.push(`0.5 w ${ML} ${hY-4} m ${W-MR} ${hY-4} l S`);
 
   const ROW = 20, SW = 38, SH = 13;
   colors.forEach(([r,g,b], i) => {
@@ -516,29 +516,29 @@ function buildPDF(colors) {
     const rf = (r/255).toFixed(5), gf = (g/255).toFixed(5), bf = (b/255).toFixed(5);
     const hex = '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
 
-    L.push(`BT /F2 11 Tf ${C1} ${y} Td (${e(i+1)}) Tj ET`);
+    contentLines.push(`BT /F2 11 Tf ${C1} ${y} Td (${escapePdf(i+1)}) Tj ET`);
 
     // Filled swatch
-    L.push(`${rf} ${gf} ${bf} rg`);
-    L.push(`${C2} ${(y-3).toFixed(2)} ${SW} ${SH} re f`);
+    contentLines.push(`${rf} ${gf} ${bf} rg`);
+    contentLines.push(`${C2} ${(y-3).toFixed(2)} ${SW} ${SH} re f`);
 
     // Swatch border (stroke in black)
-    L.push(`0 g 0 G 0.3 w`);
-    L.push(`${C2} ${(y-3).toFixed(2)} ${SW} ${SH} re S`);
+    contentLines.push(`0 g 0 G 0.3 w`);
+    contentLines.push(`${C2} ${(y-3).toFixed(2)} ${SW} ${SH} re S`);
 
-    L.push(`BT /F1 10 Tf ${C3} ${y} Td (${e(hex)}) Tj ET`);
-    L.push(`BT /F1 10 Tf ${C4}    ${y} Td (${e(r)}) Tj ET`);
-    L.push(`BT /F1 10 Tf ${C4+16} ${y} Td (${e(g)}) Tj ET`);
-    L.push(`BT /F1 10 Tf ${C4+32} ${y} Td (${e(b)}) Tj ET`);
+    contentLines.push(`BT /F1 10 Tf ${C3} ${y} Td (${escapePdf(hex)}) Tj ET`);
+    contentLines.push(`BT /F1 10 Tf ${C4}    ${y} Td (${escapePdf(r)}) Tj ET`);
+    contentLines.push(`BT /F1 10 Tf ${C4+16} ${y} Td (${escapePdf(g)}) Tj ET`);
+    contentLines.push(`BT /F1 10 Tf ${C4+32} ${y} Td (${escapePdf(b)}) Tj ET`);
   });
 
   // Page border — use a dedicated bottom-margin constant so coordinates are unambiguous
   const MB = ML;   // bottom margin (same as left/right)
   const bx0 = ML - 5, bx1 = W - MR + 5;
   const by0 = MB - 5, by1 = H - MT + 10;
-  L.push(`0 g 0 G 0.5 w ${bx0} ${by0} m ${bx0} ${by1} l ${bx1} ${by1} l ${bx1} ${by0} l ${bx0} ${by0} l S`);
+  contentLines.push(`0 g 0 G 0.5 w ${bx0} ${by0} m ${bx0} ${by1} l ${bx1} ${by1} l ${bx1} ${by0} l ${bx0} ${by0} l S`);
 
-  const stream = L.join('\n');
+  const stream = contentLines.join('\n');
 
   // Assemble PDF objects
   const objs = [
@@ -678,7 +678,9 @@ function downloadPDF() {
 
 function trigger(url, filename) {
   const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
+  a.href = url;
+  a.download = filename;
+  a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 </script>
