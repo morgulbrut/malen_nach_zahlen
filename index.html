@@ -433,24 +433,74 @@ function buildSVG(colorMap, regions, centers, W, H, scale, minRegion) {
   const s  = scale;
   const parts = [];
 
-  // Horizontal boundary lines (between row y and y+1)
-  for (let y = 0; y < H - 1; y++) {
-    let startX = -1;
-    for (let x = 0; x <= W; x++) {
-      const diff = x < W && colorMap[y*W+x] !== colorMap[(y+1)*W+x];
-      if (diff && startX === -1)        startX = x;
-      else if (!diff && startX !== -1)  { parts.push(`M${startX*s},${(y+1)*s}H${x*s}`); startX = -1; }
+  // Marching-squares boundary tracer.
+  // For each interior grid corner (gx, gy) we look at the 4 surrounding pixels and
+  // draw line segments between the midpoints of whichever edges cross a colour
+  // boundary.  Connecting midpoints of *adjacent* edges produces diagonal segments
+  // at corners where regions meet diagonally, so lines are no longer restricted to
+  // 0° and 90°.
+  for (let gy = 1; gy < H; gy++) {
+    for (let gx = 1; gx < W; gx++) {
+      const TL = colorMap[(gy-1)*W+(gx-1)];
+      const TR = colorMap[(gy-1)*W+gx];
+      const BL = colorMap[gy*W+(gx-1)];
+      const BR = colorMap[gy*W+gx];
+
+      // Midpoint of each boundary edge adjacent to this corner (SVG coords)
+      const topMid    = [gx * s,          (gy - 0.5) * s];
+      const rightMid  = [(gx + 0.5) * s,  gy * s        ];
+      const bottomMid = [gx * s,          (gy + 0.5) * s];
+      const leftMid   = [(gx - 0.5) * s,  gy * s        ];
+
+      const active = [];
+      if (TL !== TR) active.push(topMid);
+      if (TR !== BR) active.push(rightMid);
+      if (BL !== BR) active.push(bottomMid);
+      if (TL !== BL) active.push(leftMid);
+
+      if (active.length === 2) {
+        // Straight or diagonal segment between the two active midpoints
+        parts.push(`M${active[0][0]},${active[0][1]}L${active[1][0]},${active[1][1]}`);
+      } else if (active.length === 3) {
+        // Three-way junction: connect each active midpoint to the corner itself
+        const cx = gx * s, cy = gy * s;
+        for (const pt of active) {
+          parts.push(`M${pt[0]},${pt[1]}L${cx},${cy}`);
+        }
+      } else if (active.length === 4) {
+        // Saddle point: pair midpoints based on which diagonal colours match
+        if (TL === BR) {
+          parts.push(`M${topMid[0]},${topMid[1]}L${leftMid[0]},${leftMid[1]}`);
+          parts.push(`M${rightMid[0]},${rightMid[1]}L${bottomMid[0]},${bottomMid[1]}`);
+        } else {
+          parts.push(`M${topMid[0]},${topMid[1]}L${rightMid[0]},${rightMid[1]}`);
+          parts.push(`M${leftMid[0]},${leftMid[1]}L${bottomMid[0]},${bottomMid[1]}`);
+        }
+      }
     }
   }
 
-  // Vertical boundary lines (between col x and x+1)
-  for (let x = 0; x < W - 1; x++) {
-    let startY = -1;
-    for (let y = 0; y <= H; y++) {
-      const diff = y < H && colorMap[y*W+x] !== colorMap[y*W+(x+1)];
-      if (diff && startY === -1)        startY = y;
-      else if (!diff && startY !== -1)  { parts.push(`M${(x+1)*s},${startY*s}V${y*s}`); startY = -1; }
-    }
+  // Extend boundary lines from the interior midpoints to the image edges so that
+  // colour boundaries that touch the border of the image are fully drawn.
+  // Top edge
+  for (let gx = 1; gx < W; gx++) {
+    if (colorMap[gx-1] !== colorMap[gx])
+      parts.push(`M${gx*s},0V${0.5*s}`);
+  }
+  // Bottom edge
+  for (let gx = 1; gx < W; gx++) {
+    if (colorMap[(H-1)*W+(gx-1)] !== colorMap[(H-1)*W+gx])
+      parts.push(`M${gx*s},${(H-0.5)*s}V${H*s}`);
+  }
+  // Left edge
+  for (let gy = 1; gy < H; gy++) {
+    if (colorMap[(gy-1)*W] !== colorMap[gy*W])
+      parts.push(`M0,${gy*s}H${0.5*s}`);
+  }
+  // Right edge
+  for (let gy = 1; gy < H; gy++) {
+    if (colorMap[(gy-1)*W+(W-1)] !== colorMap[gy*W+(W-1)])
+      parts.push(`M${(W-0.5)*s},${gy*s}H${W*s}`);
   }
 
   const edgePath = parts.join(' ');
