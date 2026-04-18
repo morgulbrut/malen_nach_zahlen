@@ -432,13 +432,27 @@ function buildSVG(colorMap, regions, centers, W, H, scale, minRegion) {
   const sw = W * scale, sh = H * scale;
   const s  = scale;
   const parts = [];
+  const f = v => v.toFixed(1);
+
+  // Returns a quadratic Bezier path segment from p0 to p1, with the control
+  // point displaced perpendicular to the segment by `sign * s * 0.35`.
+  // This gives every boundary segment a gentle, unconstrained curve.
+  const curveSeg = (p0, p1, sign) => {
+    const [x1, y1] = p0, [x2, y2] = p1;
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    if (len < 0.001) return '';
+    const offset = s * 0.35 * sign;
+    const qx = (x1+x2)/2 + (-dy/len) * offset;
+    const qy = (y1+y2)/2 + (dx/len) * offset;
+    return `M${f(x1)},${f(y1)}Q${f(qx)},${f(qy)} ${f(x2)},${f(y2)}`;
+  };
 
   // Marching-squares boundary tracer.
   // For each interior grid corner (gx, gy) we look at the 4 surrounding pixels and
-  // draw line segments between the midpoints of whichever edges cross a colour
-  // boundary.  Connecting midpoints of *adjacent* edges produces diagonal segments
-  // at corners where regions meet diagonally, so lines are no longer restricted to
-  // 0° and 90°.
+  // draw curved segments between the midpoints of whichever edges cross a colour
+  // boundary.  Segments use quadratic Bezier curves so lines are unconstrained in
+  // angle and have organic curvature.
   for (let gy = 1; gy < H; gy++) {
     for (let gx = 1; gx < W; gx++) {
       const TL = colorMap[(gy-1)*W+(gx-1)];
@@ -458,23 +472,26 @@ function buildSVG(colorMap, regions, centers, W, H, scale, minRegion) {
       if (BL !== BR) active.push(bottomMid);
       if (TL !== BL) active.push(leftMid);
 
+      // Alternate curve direction by grid position for organic, hand-drawn feel
+      const sign = (gx + gy) % 2 === 0 ? 1 : -1;
+
       if (active.length === 2) {
-        // Straight or diagonal segment between the two active midpoints
-        parts.push(`M${active[0][0]},${active[0][1]}L${active[1][0]},${active[1][1]}`);
+        // Curved segment between the two active midpoints
+        parts.push(curveSeg(active[0], active[1], sign));
       } else if (active.length === 3) {
         // Three-way junction: connect each active midpoint to the corner itself
-        const cx = gx * s, cy = gy * s;
+        const corner = [gx * s, gy * s];
         for (const pt of active) {
-          parts.push(`M${pt[0]},${pt[1]}L${cx},${cy}`);
+          parts.push(curveSeg(pt, corner, sign));
         }
       } else if (active.length === 4) {
         // Saddle point: pair midpoints based on which diagonal colours match
         if (TL === BR) {
-          parts.push(`M${topMid[0]},${topMid[1]}L${leftMid[0]},${leftMid[1]}`);
-          parts.push(`M${rightMid[0]},${rightMid[1]}L${bottomMid[0]},${bottomMid[1]}`);
+          parts.push(curveSeg(topMid, leftMid, sign));
+          parts.push(curveSeg(rightMid, bottomMid, -sign));
         } else {
-          parts.push(`M${topMid[0]},${topMid[1]}L${rightMid[0]},${rightMid[1]}`);
-          parts.push(`M${leftMid[0]},${leftMid[1]}L${bottomMid[0]},${bottomMid[1]}`);
+          parts.push(curveSeg(topMid, rightMid, sign));
+          parts.push(curveSeg(leftMid, bottomMid, -sign));
         }
       }
     }
@@ -503,13 +520,12 @@ function buildSVG(colorMap, regions, centers, W, H, scale, minRegion) {
       parts.push(`M${(W-0.5)*s},${gy*s}H${W*s}`);
   }
 
-  const edgePath = parts.join(' ');
+  const edgePath = parts.filter(Boolean).join(' ');
 
-  // Number labels for every region that is large enough
+  // Number labels for every region
   const fontSize = Math.max(7, Math.min(18, Math.floor(Math.min(sw,sh) * 0.025)));
   const numLabels = [];
   for (const r of regions) {
-    if (r.size < minRegion) continue;
     const cx = ((r.centX + 0.5) * s).toFixed(1);
     const cy = ((r.centY + 0.5) * s).toFixed(1);
     const num = r.colorIdx + 1;
