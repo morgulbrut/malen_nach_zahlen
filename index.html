@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paint by Numbers Generator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f0f4f8;
+      color: #2d3748;
+      min-height: 100vh;
+    }
+
+    header {
+      background: linear-gradient(135deg, #2c3e50, #3498db);
+      color: white;
+      padding: 1.5rem 2rem;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    header h1 { font-size: 2rem; letter-spacing: -0.5px; }
+    header p  { font-size: 0.95rem; opacity: 0.85; margin-top: 0.3rem; }
+
+    main {
+      max-width: 960px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+
+    .card {
+      background: white;
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.07);
+    }
+    .card h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; color: #2c3e50; }
+
+    /* Upload area */
+    .upload-area {
+      border: 3px dashed #b2c6d8;
+      border-radius: 10px;
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .upload-area:hover, .upload-area.drag-over {
+      border-color: #3498db;
+      background: #eaf4fd;
+    }
+    .upload-area .icon { font-size: 3.5rem; line-height: 1; }
+    .upload-area .hint { color: #718096; margin-top: 0.6rem; font-size: 0.9rem; }
+    .upload-area .filename { margin-top: 0.5rem; font-weight: 600; color: #27ae60; }
+
+    /* Options grid */
+    .options-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 1.2rem;
+    }
+    .opt label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.3rem; }
+    .opt input[type=range] { width: 100%; accent-color: #3498db; }
+    .val { display: inline-block; min-width: 2em; color: #3498db; font-weight: 700; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.65rem 1.3rem;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 600;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+    .btn:active:not(:disabled) { transform: translateY(0); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: #3498db; color: white; }
+    .btn-success { background: #27ae60; color: white; }
+    .btn-accent  { background: #8e44ad; color: white; }
+    .btn-row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.2rem; }
+
+    /* Status / progress */
+    #status-msg { color: #718096; font-size: 0.88rem; font-style: italic; margin-top: 0.6rem; min-height: 1.2em; }
+    #prog-wrap { margin-top: 0.5rem; display: none; }
+    progress { width: 100%; height: 6px; border-radius: 3px; }
+
+    /* Tabs */
+    .tabs { display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 1rem; }
+    .tab {
+      padding: 0.5rem 1.1rem;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #718096;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: color 0.15s;
+    }
+    .tab.active { color: #3498db; border-bottom-color: #3498db; }
+    .tab:hover:not(.active) { color: #2d3748; }
+
+    /* Preview panels */
+    #preview-area { display: none; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .panel canvas, .panel svg {
+      max-width: 100%;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      display: block;
+    }
+
+    /* Color palette preview */
+    .palette {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 1rem;
+    }
+    .swatch {
+      width: 36px;
+      height: 36px;
+      border-radius: 5px;
+      border: 1px solid rgba(0,0,0,0.15);
+      position: relative;
+      cursor: default;
+    }
+    .swatch span {
+      position: absolute;
+      bottom: 2px;
+      right: 3px;
+      font-size: 9px;
+      font-weight: 700;
+      color: white;
+      text-shadow: 0 0 2px #000;
+    }
+
+    @media (max-width: 600px) {
+      header h1 { font-size: 1.4rem; }
+      .options-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🎨 Paint by Numbers Generator</h1>
+  <p>Upload a photo — get a printable SVG template + PDF colour legend</p>
+</header>
+
+<main>
+
+  <!-- Upload -->
+  <div class="card">
+    <div class="upload-area" id="upload-area">
+      <div class="icon">🖼️</div>
+      <p><strong>Click to choose an image</strong> or drag &amp; drop it here</p>
+      <p class="hint">PNG · JPG · WEBP · GIF</p>
+      <p class="filename" id="fname"></p>
+      <input type="file" id="file-input" accept="image/*" style="display:none">
+    </div>
+  </div>
+
+  <!-- Options + Generate -->
+  <div class="card">
+    <h2>Options</h2>
+    <div class="options-grid">
+      <div class="opt">
+        <label>Colors: <span class="val" id="v-colors">12</span></label>
+        <input type="range" id="opt-colors" min="4" max="30" value="12">
+      </div>
+      <div class="opt">
+        <label>Processing size: <span class="val" id="v-size">150</span> px</label>
+        <input type="range" id="opt-size" min="50" max="300" value="150" step="10">
+      </div>
+      <div class="opt">
+        <label>Output scale: <span class="val" id="v-scale">4</span>×</label>
+        <input type="range" id="opt-scale" min="1" max="8" value="4">
+      </div>
+      <div class="opt">
+        <label>Min region (px²): <span class="val" id="v-minreg">30</span></label>
+        <input type="range" id="opt-minreg" min="5" max="300" value="30" step="5">
+      </div>
+    </div>
+    <button class="btn btn-primary" id="gen-btn" disabled>⚙️ Generate template</button>
+    <p id="status-msg"></p>
+    <div id="prog-wrap"><progress id="prog" value="0" max="100"></progress></div>
+  </div>
+
+  <!-- Result -->
+  <div class="card" id="preview-area">
+    <h2>Result</h2>
+    <div class="tabs">
+      <button class="tab active" data-tab="svg">Template (SVG)</button>
+      <button class="tab" data-tab="quant">Quantized</button>
+      <button class="tab" data-tab="orig">Original</button>
+    </div>
+    <div class="panel active" id="panel-svg"></div>
+    <div class="panel" id="panel-quant"><canvas id="quant-canvas"></canvas></div>
+    <div class="panel" id="panel-orig"><canvas id="orig-canvas"></canvas></div>
+    <div id="palette-wrap">
+      <p style="margin-top:1rem;font-weight:600;font-size:0.9rem;">Colour palette:</p>
+      <div class="palette" id="palette"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-success" id="dl-svg">⬇️ Download SVG</button>
+      <button class="btn btn-accent"  id="dl-pdf">⬇️ Download PDF legend</button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+'use strict';
+
+// ─── State ────────────────────────────────────────────────────────────────────
+const state = {
+  origCanvas: null,
+  svgString: null,
+  pdfBytes: null,
+  colors: null,   // [[r,g,b], …]
+};
+
+// ─── UI wiring ────────────────────────────────────────────────────────────────
+const uploadArea = document.getElementById('upload-area');
+const fileInput  = document.getElementById('file-input');
+const genBtn     = document.getElementById('gen-btn');
+const statusMsg  = document.getElementById('status-msg');
+const progWrap   = document.getElementById('prog-wrap');
+const progEl     = document.getElementById('prog');
+
+uploadArea.addEventListener('click', () => fileInput.click());
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+uploadArea.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadArea.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) loadFile(f);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
+
+// Range inputs
+[['opt-colors','v-colors'], ['opt-size','v-size'], ['opt-scale','v-scale'], ['opt-minreg','v-minreg']].forEach(
+  ([id, vid]) => document.getElementById(id).addEventListener('input', () => {
+    document.getElementById(vid).textContent = document.getElementById(id).value;
+  })
+);
+
+// Tabs
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+genBtn.addEventListener('click', () => generate().catch(err => { setStatus('Error: ' + err.message); }));
+document.getElementById('dl-svg').addEventListener('click', downloadSVG);
+document.getElementById('dl-pdf').addEventListener('click', downloadPDF);
+
+// ─── Image loading ────────────────────────────────────────────────────────────
+function loadFile(file) {
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = () => {
+    const c = document.getElementById('orig-canvas');
+    c.width = img.width; c.height = img.height;
+    c.getContext('2d').drawImage(img, 0, 0);
+    state.origCanvas = c;
+    genBtn.disabled = false;
+    document.getElementById('fname').textContent = `✅ ${file.name}  (${img.width}×${img.height})`;
+    URL.revokeObjectURL(url);
+  };
+  img.onerror = () => { setStatus('Could not load image.'); URL.revokeObjectURL(url); };
+  img.src = url;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function setStatus(msg) { statusMsg.textContent = msg; }
+function setProgress(v) { progEl.value = v; }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function rgbHex([r,g,b]) {
+  return '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+}
+
+// ─── Resize canvas helper ─────────────────────────────────────────────────────
+function resizedCanvas(src, maxPx) {
+  let { width: w, height: h } = src;
+  const ratio = Math.min(maxPx / w, maxPx / h, 1);
+  w = Math.max(1, Math.round(w * ratio));
+  h = Math.max(1, Math.round(h * ratio));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(src, 0, 0, w, h);
+  return c;
+}
+
+// ─── K-means++ color quantization ────────────────────────────────────────────
+function colorDistSq(a, b) {
+  const dr = a[0]-b[0], dg = a[1]-b[1], db = a[2]-b[2];
+  return dr*dr + dg*dg + db*db;
+}
+
+function nearestIdx(pixel, centers) {
+  let best = 0, bestD = Infinity;
+  for (let c = 0; c < centers.length; c++) {
+    const d = colorDistSq(pixel, centers[c]);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
+function kMeans(pixels, k) {
+  // Subsample to at most 6000 pixels for speed
+  const SAMPLE = 6000;
+  let sample = pixels;
+  if (pixels.length > SAMPLE) {
+    const step = Math.floor(pixels.length / SAMPLE);
+    sample = [];
+    for (let i = 0; i < pixels.length; i += step) sample.push(pixels[i]);
+  }
+
+  // k-means++ initialisation
+  const centers = [];
+  centers.push([...sample[Math.floor(Math.random() * sample.length)]]);
+  for (let i = 1; i < k; i++) {
+    const dists = sample.map(p => {
+      let minD = Infinity;
+      for (const c of centers) { const d = colorDistSq(p,c); if (d < minD) minD = d; }
+      return minD;
+    });
+    const total = dists.reduce((a,d) => a+d, 0);
+    let r = Math.random() * total;
+    let chosen = sample.length - 1;
+    for (let j = 0; j < dists.length; j++) { r -= dists[j]; if (r <= 0) { chosen = j; break; } }
+    centers.push([...sample[chosen]]);
+  }
+
+  // Lloyd iterations
+  for (let iter = 0; iter < 30; iter++) {
+    const sums   = Array.from({length: k}, () => [0,0,0]);
+    const counts = new Array(k).fill(0);
+    for (const p of sample) {
+      const c = nearestIdx(p, centers);
+      sums[c][0] += p[0]; sums[c][1] += p[1]; sums[c][2] += p[2];
+      counts[c]++;
+    }
+    let changed = false;
+    for (let c = 0; c < k; c++) {
+      if (!counts[c]) continue;
+      const nc = [
+        Math.round(sums[c][0]/counts[c]),
+        Math.round(sums[c][1]/counts[c]),
+        Math.round(sums[c][2]/counts[c]),
+      ];
+      if (nc[0] !== centers[c][0] || nc[1] !== centers[c][1] || nc[2] !== centers[c][2]) {
+        centers[c] = nc; changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  return centers;
+}
+
+// ─── Quantize every pixel to nearest center index ─────────────────────────────
+function buildColorMap(imageData, centers) {
+  const { data, width, height } = imageData;
+  const map = new Uint8Array(width * height);
+  for (let i = 0; i < width * height; i++) {
+    map[i] = nearestIdx([data[i*4], data[i*4+1], data[i*4+2]], centers);
+  }
+  return map;
+}
+
+// ─── BFS connected-component labelling ────────────────────────────────────────
+function labelRegions(colorMap, width, height) {
+  const labels  = new Int32Array(width * height).fill(-1);
+  const regions = [];   // {colorIdx, centX, centY, size}
+
+  for (let sy = 0; sy < height; sy++) {
+    for (let sx = 0; sx < width; sx++) {
+      const si = sy * width + sx;
+      if (labels[si] !== -1) continue;
+
+      const colorIdx = colorMap[si];
+      const label    = regions.length;
+      labels[si]     = label;
+
+      const queue = [si];
+      let sumX = 0, sumY = 0, size = 0, qHead = 0;
+
+      while (qHead < queue.length) {
+        const idx = queue[qHead++];
+        const x = idx % width;
+        const y = (idx - x) / width;
+        sumX += x; sumY += y; size++;
+
+        const nbrs = [];
+        if (x > 0)        nbrs.push(idx - 1);
+        if (x < width-1)  nbrs.push(idx + 1);
+        if (y > 0)        nbrs.push(idx - width);
+        if (y < height-1) nbrs.push(idx + width);
+        for (const ni of nbrs) {
+          if (labels[ni] === -1 && colorMap[ni] === colorIdx) {
+            labels[ni] = label;
+            queue.push(ni);
+          }
+        }
+      }
+
+      regions.push({ colorIdx, centX: sumX/size, centY: sumY/size, size });
+    }
+  }
+  return { labels, regions };
+}
+
+// ─── SVG template generation ──────────────────────────────────────────────────
+function buildSVG(colorMap, regions, centers, W, H, scale, minRegion) {
+  const sw = W * scale, sh = H * scale;
+  const s  = scale;
+  const parts = [];
+
+  // Horizontal boundary lines (between row y and y+1)
+  for (let y = 0; y < H - 1; y++) {
+    let startX = -1;
+    for (let x = 0; x <= W; x++) {
+      const diff = x < W && colorMap[y*W+x] !== colorMap[(y+1)*W+x];
+      if (diff && startX === -1)        startX = x;
+      else if (!diff && startX !== -1)  { parts.push(`M${startX*s},${(y+1)*s}H${x*s}`); startX = -1; }
+    }
+  }
+
+  // Vertical boundary lines (between col x and x+1)
+  for (let x = 0; x < W - 1; x++) {
+    let startY = -1;
+    for (let y = 0; y <= H; y++) {
+      const diff = y < H && colorMap[y*W+x] !== colorMap[y*W+(x+1)];
+      if (diff && startY === -1)        startY = y;
+      else if (!diff && startY !== -1)  { parts.push(`M${(x+1)*s},${startY*s}V${y*s}`); startY = -1; }
+    }
+  }
+
+  const edgePath = parts.join(' ');
+
+  // Number labels for every region that is large enough
+  const fontSize = Math.max(7, Math.min(18, Math.floor(Math.min(sw,sh) * 0.025)));
+  const numLabels = [];
+  for (const r of regions) {
+    if (r.size < minRegion) continue;
+    const cx = ((r.centX + 0.5) * s).toFixed(1);
+    const cy = ((r.centY + 0.5) * s).toFixed(1);
+    const num = r.colorIdx + 1;
+    numLabels.push(
+      `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central"` +
+      ` font-size="${fontSize}" font-family="Arial,Helvetica,sans-serif"` +
+      ` fill="#222" stroke="white" stroke-width="2.5" paint-order="stroke">${num}</text>`
+    );
+  }
+
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${sw}" height="${sh}" viewBox="0 0 ${sw} ${sh}">\n` +
+    `  <rect width="${sw}" height="${sh}" fill="white"/>\n` +
+    `  <path d="${edgePath}" fill="none" stroke="#111" stroke-width="0.8"/>\n` +
+    `  <rect width="${sw}" height="${sh}" fill="none" stroke="#111" stroke-width="1"/>\n` +
+    `  ${numLabels.join('\n  ')}\n` +
+    `</svg>`
+  );
+}
+
+// ─── Minimal PDF generator ────────────────────────────────────────────────────
+// Produces a colour-legend PDF without any external library.
+// Uses only ASCII characters in all content so that string length == byte count.
+function buildPDF(colors) {
+  const W = 595.28, H = 841.89;   // A4 in points
+  const ML = 50, MR = 50, MT = 60; // margins
+
+  // Escape PDF string content (parentheses and backslash)
+  function e(s) { return String(s).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)'); }
+
+  // Build page content stream
+  const L = [];   // content stream lines
+
+  L.push(`BT /F2 16 Tf ${ML} ${H-MT} Td (Paint by Numbers - Color Legend) Tj ET`);
+  L.push(`BT /F1 10 Tf ${ML} ${H-MT-18} Td (${e(colors.length + ' colors')}) Tj ET`);
+
+  // Header row
+  const hY  = H - MT - 40;
+  const C1  = ML, C2 = ML+25, C3 = C2+45, C4 = C3+68, C5 = C4+68;
+  L.push(`BT /F2 10 Tf ${C1} ${hY} Td (No.) Tj ET`);
+  L.push(`BT /F2 10 Tf ${C2} ${hY} Td (Swatch) Tj ET`);
+  L.push(`BT /F2 10 Tf ${C3} ${hY} Td (Hex) Tj ET`);
+  L.push(`BT /F2 10 Tf ${C4} ${hY} Td (R) Tj ET`);
+  L.push(`BT /F2 10 Tf ${C4+16} ${hY} Td (G) Tj ET`);
+  L.push(`BT /F2 10 Tf ${C4+32} ${hY} Td (B) Tj ET`);
+
+  // Divider
+  L.push(`0.5 w ${ML} ${hY-4} m ${W-MR} ${hY-4} l S`);
+
+  const ROW = 20, SW = 38, SH = 13;
+  colors.forEach(([r,g,b], i) => {
+    const y  = hY - 16 - i * ROW;
+    const rf = (r/255).toFixed(5), gf = (g/255).toFixed(5), bf = (b/255).toFixed(5);
+    const hex = '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+
+    L.push(`BT /F2 11 Tf ${C1} ${y} Td (${e(i+1)}) Tj ET`);
+
+    // Filled swatch
+    L.push(`${rf} ${gf} ${bf} rg`);
+    L.push(`${C2} ${(y-3).toFixed(2)} ${SW} ${SH} re f`);
+
+    // Swatch border (stroke in black)
+    L.push(`0 g 0 G 0.3 w`);
+    L.push(`${C2} ${(y-3).toFixed(2)} ${SW} ${SH} re S`);
+
+    L.push(`BT /F1 10 Tf ${C3} ${y} Td (${e(hex)}) Tj ET`);
+    L.push(`BT /F1 10 Tf ${C4}    ${y} Td (${e(r)}) Tj ET`);
+    L.push(`BT /F1 10 Tf ${C4+16} ${y} Td (${e(g)}) Tj ET`);
+    L.push(`BT /F1 10 Tf ${C4+32} ${y} Td (${e(b)}) Tj ET`);
+  });
+
+  // Page border — use a dedicated bottom-margin constant so coordinates are unambiguous
+  const MB = ML;   // bottom margin (same as left/right)
+  const bx0 = ML - 5, bx1 = W - MR + 5;
+  const by0 = MB - 5, by1 = H - MT + 10;
+  L.push(`0 g 0 G 0.5 w ${bx0} ${by0} m ${bx0} ${by1} l ${bx1} ${by1} l ${bx1} ${by0} l ${bx0} ${by0} l S`);
+
+  const stream = L.join('\n');
+
+  // Assemble PDF objects
+  const objs = [
+    `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj`,
+    `2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj`,
+    [
+      `3 0 obj`,
+      `<< /Type /Page /Parent 2 0 R`,
+      `   /MediaBox [0 0 ${W} ${H}]`,
+      `   /Contents 4 0 R`,
+      `   /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> >>`,
+      `endobj`,
+    ].join('\n'),
+    `4 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}\nendstream\nendobj`,
+    `5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj`,
+    `6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj`,
+  ];
+
+  // Build the file string and track byte offsets
+  let pdf = '%PDF-1.4\n';
+  const offsets = [];
+  for (const obj of objs) {
+    offsets.push(pdf.length);
+    pdf += obj + '\n';
+  }
+
+  const xrefPos = pdf.length;
+  pdf += 'xref\n';
+  pdf += `0 ${objs.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  for (const off of offsets) {
+    pdf += String(off).padStart(10,'0') + ' 00000 n \n';
+  }
+  pdf += `trailer\n<< /Size ${objs.length+1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF`;
+
+  return new TextEncoder().encode(pdf);
+}
+
+// ─── Main: generate ───────────────────────────────────────────────────────────
+async function generate() {
+  if (!state.origCanvas) return;
+  genBtn.disabled = true;
+  progWrap.style.display = 'block';
+
+  try {
+    const numColors = +document.getElementById('opt-colors').value;
+    const maxSize   = +document.getElementById('opt-size').value;
+    const scale     = +document.getElementById('opt-scale').value;
+    const minReg    = +document.getElementById('opt-minreg').value;
+
+    setStatus('Resizing image…'); setProgress(5); await sleep(0);
+    const procC = resizedCanvas(state.origCanvas, maxSize);
+    const { width: W, height: H } = procC;
+
+    setStatus('Extracting pixels…'); setProgress(10); await sleep(0);
+    const ctx       = procC.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, W, H);
+    const pixels    = [];
+    for (let i = 0; i < W * H; i++) {
+      pixels.push([imageData.data[i*4], imageData.data[i*4+1], imageData.data[i*4+2]]);
+    }
+
+    setStatus(`Running k-means++ (${numColors} colours)…`); setProgress(15); await sleep(0);
+    const centers = kMeans(pixels, numColors);
+    state.colors  = centers;
+
+    setStatus('Quantizing image…'); setProgress(50); await sleep(0);
+    const colorMap = buildColorMap(imageData, centers);
+
+    // Render quantized preview
+    const qCanvas = document.getElementById('quant-canvas');
+    qCanvas.width = W; qCanvas.height = H;
+    const qCtx = qCanvas.getContext('2d');
+    const qData = qCtx.createImageData(W, H);
+    for (let i = 0; i < W*H; i++) {
+      const [r,g,b] = centers[colorMap[i]];
+      qData.data[i*4]=r; qData.data[i*4+1]=g; qData.data[i*4+2]=b; qData.data[i*4+3]=255;
+    }
+    qCtx.putImageData(qData, 0, 0);
+
+    setStatus('Finding regions…'); setProgress(65); await sleep(0);
+    const { regions } = labelRegions(colorMap, W, H);
+
+    setStatus('Building SVG…'); setProgress(80); await sleep(0);
+    const svg = buildSVG(colorMap, regions, centers, W, H, scale, minReg);
+    state.svgString = svg;
+
+    setStatus('Building PDF…'); setProgress(92); await sleep(0);
+    state.pdfBytes = buildPDF(centers);
+
+    // Inject SVG preview
+    const panelSvg = document.getElementById('panel-svg');
+    panelSvg.innerHTML = svg;
+    const svgEl = panelSvg.querySelector('svg');
+    if (svgEl) { svgEl.style.maxWidth = '100%'; svgEl.style.height = 'auto'; }
+
+    // Colour palette chips
+    const palette = document.getElementById('palette');
+    palette.innerHTML = '';
+    centers.forEach(([r,g,b], i) => {
+      const d = document.createElement('div');
+      d.className = 'swatch';
+      d.style.background = `rgb(${r},${g},${b})`;
+      d.title = `${i+1}: ${rgbHex([r,g,b])}  rgb(${r},${g},${b})`;
+      d.innerHTML = `<span>${i+1}</span>`;
+      palette.appendChild(d);
+    });
+
+    setProgress(100);
+    setStatus(`Done — ${centers.length} colours, ${regions.length} regions (${W}×${H} processed)`);
+    document.getElementById('preview-area').style.display = 'block';
+
+    // Switch to SVG tab
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelector('[data-tab="svg"]').classList.add('active');
+    document.getElementById('panel-svg').classList.add('active');
+
+  } finally {
+    genBtn.disabled = false;
+    setTimeout(() => { progWrap.style.display = 'none'; setProgress(0); }, 800);
+  }
+}
+
+// ─── Downloads ────────────────────────────────────────────────────────────────
+function downloadSVG() {
+  if (!state.svgString) return;
+  const blob = new Blob([state.svgString], { type: 'image/svg+xml' });
+  trigger(URL.createObjectURL(blob), 'paint-by-numbers.svg');
+}
+
+function downloadPDF() {
+  if (!state.pdfBytes) return;
+  const blob = new Blob([state.pdfBytes], { type: 'application/pdf' });
+  trigger(URL.createObjectURL(blob), 'paint-by-numbers-legend.pdf');
+}
+
+function trigger(url, filename) {
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+</script>
+</body>
+</html>
