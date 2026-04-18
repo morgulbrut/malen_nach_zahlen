@@ -520,7 +520,7 @@ function buildSVG(colorMap, regions, centers, W, H, scale, minRegion) {
       parts.push(`M${(W-0.5)*s},${gy*s}H${W*s}`);
   }
 
-  const edgePath = parts.join(' ');
+  const edgePath = parts.filter(Boolean).join(' ');
 
   // Number labels for every region
   const fontSize = Math.max(7, Math.min(18, Math.floor(Math.min(sw,sh) * 0.025)));
