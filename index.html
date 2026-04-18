@@ -191,6 +191,10 @@
         <label>Min region (px²): <span class="val" id="v-minreg">30</span></label>
         <input type="range" id="opt-minreg" min="5" max="300" value="30" step="5">
       </div>
+      <div class="opt">
+        <label>Color tolerance: <span class="val" id="v-tolerance">15</span></label>
+        <input type="range" id="opt-tolerance" min="0" max="80" value="15">
+      </div>
     </div>
     <button class="btn btn-primary" id="gen-btn" disabled>⚙️ Generate template</button>
     <p id="status-msg"></p>
@@ -251,7 +255,7 @@ uploadArea.addEventListener('drop', e => {
 fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
 
 // Range inputs
-[['opt-colors','v-colors'], ['opt-size','v-size'], ['opt-scale','v-scale'], ['opt-minreg','v-minreg']].forEach(
+[['opt-colors','v-colors'], ['opt-size','v-size'], ['opt-scale','v-scale'], ['opt-minreg','v-minreg'], ['opt-tolerance','v-tolerance']].forEach(
   ([id, vid]) => document.getElementById(id).addEventListener('input', () => {
     document.getElementById(vid).textContent = document.getElementById(id).value;
   })
@@ -381,6 +385,71 @@ function buildColorMap(imageData, centers) {
   const map = new Uint8Array(width * height);
   for (let i = 0; i < width * height; i++) {
     map[i] = nearestIdx([data[i*4], data[i*4+1], data[i*4+2]], centers);
+  }
+  return map;
+}
+
+// ─── Merge k-means centers that are within `threshold` Euclidean distance ─────
+// Returns new centers array and a mapping from old index → new index.
+function mergeSimilarColors(centers, threshold) {
+  const n = centers.length;
+  const active = new Array(n).fill(true);
+  const merged = centers.map(c => [...c]);
+  const threshSq = threshold * threshold;
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    let bestD = threshSq, bestI = -1, bestJ = -1;
+    for (let i = 0; i < n; i++) {
+      if (!active[i]) continue;
+      for (let j = i + 1; j < n; j++) {
+        if (!active[j]) continue;
+        const d = colorDistSq(merged[i], merged[j]);
+        if (d < bestD) { bestD = d; bestI = i; bestJ = j; }
+      }
+    }
+    if (bestI >= 0) {
+      // Merge bestJ into bestI (simple average)
+      merged[bestI] = [
+        Math.round((merged[bestI][0] + merged[bestJ][0]) / 2),
+        Math.round((merged[bestI][1] + merged[bestJ][1]) / 2),
+        Math.round((merged[bestI][2] + merged[bestJ][2]) / 2),
+      ];
+      active[bestJ] = false;
+      changed = true;
+    }
+  }
+
+  return merged.filter((_, i) => active[i]);
+}
+
+// ─── Spatial mode filter — replaces each pixel with the most common color ─────
+// in its 3×3 neighbourhood (helps absorb isolated pixel-level noise).
+function smoothColorMap(colorMap, width, height, passes) {
+  let map = colorMap;
+  for (let p = 0; p < passes; p++) {
+    const next = new Uint8Array(map.length);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const counts = {};
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+              const c = map[ny * width + nx];
+              counts[c] = (counts[c] || 0) + 1;
+            }
+          }
+        }
+        let best = map[y * width + x], bestCnt = 0;
+        for (const c in counts) {
+          if (counts[c] > bestCnt) { bestCnt = counts[c]; best = +c; }
+        }
+        next[y * width + x] = best;
+      }
+    }
+    map = next;
   }
   return map;
 }
@@ -522,10 +591,11 @@ function buildSVG(colorMap, regions, centers, W, H, scale, minRegion) {
 
   const edgePath = parts.filter(Boolean).join(' ');
 
-  // Number labels for every region
+  // Number labels — only for regions large enough to be legible
   const fontSize = Math.max(7, Math.min(18, Math.floor(Math.min(sw,sh) * 0.025)));
   const numLabels = [];
   for (const r of regions) {
+    if (r.size < minRegion) continue;
     const cx = ((r.centX + 0.5) * s).toFixed(1);
     const cy = ((r.centY + 0.5) * s).toFixed(1);
     const num = r.colorIdx + 1;
@@ -654,6 +724,7 @@ async function generate() {
     const maxSize   = +document.getElementById('opt-size').value;
     const scale     = +document.getElementById('opt-scale').value;
     const minReg    = +document.getElementById('opt-minreg').value;
+    const tolerance = +document.getElementById('opt-tolerance').value;
 
     setStatus('Resizing image…'); setProgress(5); await sleep(0);
     const procC = resizedCanvas(state.origCanvas, maxSize);
@@ -668,11 +739,24 @@ async function generate() {
     }
 
     setStatus(`Running k-means++ (${numColors} colours)…`); setProgress(15); await sleep(0);
-    const centers = kMeans(pixels, numColors);
-    state.colors  = centers;
+    let centers = kMeans(pixels, numColors);
+
+    // Merge colour clusters that are within the tolerance threshold
+    if (tolerance > 0) {
+      setStatus('Merging similar colours…'); setProgress(45); await sleep(0);
+      centers = mergeSimilarColors(centers, tolerance);
+    }
+    state.colors = centers;
 
     setStatus('Quantizing image…'); setProgress(50); await sleep(0);
-    const colorMap = buildColorMap(imageData, centers);
+    let colorMap = buildColorMap(imageData, centers);
+
+    // Spatial smoothing: replace each pixel with the most common colour in its
+    // 3×3 neighbourhood, helping absorb isolated pixel-level noise.
+    if (tolerance > 0) {
+      setStatus('Smoothing regions…'); setProgress(60); await sleep(0);
+      colorMap = smoothColorMap(colorMap, W, H, 1);
+    }
 
     // Render quantized preview
     const qCanvas = document.getElementById('quant-canvas');
